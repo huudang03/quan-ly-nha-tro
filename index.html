@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quản lý nhà trọ</title>
+    <script>
+      // Defensive script to handle potential window.ethereum redefinition errors
+      // often caused by conflicting browser extensions.
+      (function() {
+        try {
+          const originalDefineProperty = Object.defineProperty;
+          Object.defineProperty = function(obj, prop, descriptor) {
+            if (prop === 'ethereum' && obj === window) {
+              try {
+                // If the property is already defined and not configurable,
+                // we just return the object to avoid the "Cannot redefine property" error.
+                const existing = Object.getOwnPropertyDescriptor(obj, prop);
+                if (existing && !existing.configurable) {
+                  console.warn('window.ethereum is already defined and not configurable. Skipping redefinition to avoid error.');
+                  return obj;
+                }
+                return originalDefineProperty.apply(this, arguments);
+              } catch (e) {
+                // Catch any other errors that might occur during definition
+                console.warn('Caught attempt to redefine window.ethereum:', e.message);
+                return obj;
+              }
+            }
+            return originalDefineProperty.apply(this, arguments);
+          };
+          
+          // Also wrap Object.defineProperties just in case
+          const originalDefineProperties = Object.defineProperties;
+          Object.defineProperties = function(obj, props) {
+            if (obj === window && props && props.ethereum) {
+              try {
+                const existing = Object.getOwnPropertyDescriptor(obj, 'ethereum');
+                if (existing && !existing.configurable) {
+                  console.warn('window.ethereum is already defined and not configurable in defineProperties. Skipping.');
+                  const { ethereum, ...rest } = props;
+                  return originalDefineProperties.call(this, obj, rest);
+                }
+              } catch (e) {
+                console.warn('Error in defensive defineProperties for ethereum:', e.message);
+              }
+            }
+            return originalDefineProperties.apply(this, arguments);
+          };
+        } catch (e) {
+          console.error('Failed to initialize defensive ethereum script:', e);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
