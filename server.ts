@@ -10,6 +10,7 @@ import { exec } from 'child_process';
 import apiRouter from './src/routes/api';
 import { requestLogger, errorHandler, sendSuccess, sendError } from './src/middleware/common';
 import { InvoiceService } from './src/services/invoiceService';
+import { initDatabase } from './src/initDatabase';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -128,6 +129,8 @@ async function startServer() {
 
   // 7. Global Error Handler
   app.use(errorHandler);
+
+  await initDatabase();
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER] Running on http://localhost:${PORT}`);

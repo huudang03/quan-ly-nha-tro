@@ -50,8 +50,18 @@ export class DbService {
     if (!data.createdAt) data.createdAt = new Date();
     if (!data.updatedAt) data.updatedAt = new Date();
 
-    const keys = Object.keys(data);
-    const values = Object.values(data);
+    const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``);
+    const validColumns = (cols as any[]).map(c => c.Field);
+
+    const validData: any = {};
+    for (const k of Object.keys(data)) {
+      if (validColumns.includes(k)) {
+        validData[k] = data[k];
+      }
+    }
+
+    const keys = Object.keys(validData);
+    const values = Object.values(validData);
     const placeholders = keys.map(() => '?').join(', ');
     
     const cleanValues = values.map(v => v === undefined ? null : v) as any[];
@@ -64,7 +74,11 @@ export class DbService {
 
   static async update(tableName: string, id: string, data: any) {
     data.updatedAt = new Date();
-    const keys = Object.keys(data).filter(k => k !== 'id');
+
+    const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``);
+    const validColumns = (cols as any[]).map(c => c.Field);
+
+    const keys = Object.keys(data).filter(k => k !== 'id' && validColumns.includes(k));
     const values = keys.map(k => data[k] === undefined ? null : data[k]);
     
     if (keys.length === 0) return data;
