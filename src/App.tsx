@@ -55,7 +55,6 @@ import { TenantManagement } from './components/TenantManagement';
 import { ContractManagement } from './components/ContractManagement';
 import { UtilityManagement } from './components/UtilityManagement';
 import { InvoiceManagement } from './components/InvoiceManagement';
-import { AIAssistant } from './components/AIAssistant';
 
 import { apiFetch } from './lib/api';
 
@@ -680,15 +679,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* AI Assistant */}
-      <AIAssistant 
-        rooms={rooms}
-        tenants={tenants}
-        invoices={invoices}
-        readings={readings}
-        currentUser={currentUser}
-      />
-
+      
       <Toast 
         isVisible={toast.isVisible}
         message={toast.message}

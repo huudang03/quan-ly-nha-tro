@@ -35,14 +35,14 @@ router.post('/forgot-password', async (req, res, next) => {
     }
 
     const token = cryptoRandomString({ length: 32, type: 'url-safe' });
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
 
     // Persist the reset token
     await DatabaseService.create('passwordResets', {
-      email,
-      token,
-      expiresAt: expiresAt.toISOString()
-    });
+  email,
+  token,
+  expiresAt
+});
     
     // Get the base URL for the reset link
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
@@ -70,12 +70,13 @@ router.post('/forgot-password', async (req, res, next) => {
       await EmailService.sendResetPasswordEmail(email, token, sysConfig, baseUrl);
       sendSuccess(res, { message: 'Chúng tôi đã gửi hướng dẫn đặt lại mật khẩu vào email của bạn.' });
     } catch (emailErr: any) {
-      console.error('[AUTH] Failed to send email via SMTP:', emailErr);
+      console.error('[AUTH] Failed to send email via SMTP, full error:');
+      console.error(emailErr);
       const resetLink = `${baseUrl}/reset-password?token=${token}`;
       
       let errorMessage = 'Có lỗi khi gửi email. Có thể cấu hình SMTP chưa chính xác hoặc máy chủ bị chặn kết nối.';
       
-      if (emailErr.message?.includes('Invalid login') || emailErr.message?.includes('auth') || emailErr.message?.includes('Username and Password not accepted')) {
+      if (emailErr.message?.includes('Invalid login') || emailErr.message?.includes('auth') || emailErr.message?.includes('Username and Password not accepted') || emailErr.message?.includes('Đăng nhập SMTP thất bại')) {
         errorMessage = 'Lỗi đăng nhập SMTP. Nếu dùng Gmail, hãy chắc chắn bạn đã dùng "Mật khẩu ứng dụng" (App Password) 16 ký tự thay vì mật khẩu thông thường.';
       } else if (emailErr.code === 'ETIMEDOUT') {
         errorMessage = 'Kết nối tới máy chủ SMTP bị hết hạn (Timeout). Vui lòng kiểm tra lại Host và Port.';
@@ -83,8 +84,9 @@ router.post('/forgot-password', async (req, res, next) => {
         errorMessage = `Lỗi SMTP: ${emailErr.message}`;
       }
 
-      return sendSuccess(res, { 
-        message: errorMessage,
+      return res.status(500).json({
+        success: false,
+        error: errorMessage,
         debugLink: process.env.NODE_ENV !== 'production' ? resetLink : undefined,
         errorDetail: process.env.NODE_ENV !== 'production' ? emailErr.message : undefined
       });
@@ -96,35 +98,70 @@ router.post('/forgot-password', async (req, res, next) => {
 router.post('/reset-password', async (req, res, next) => {
   try {
     const { token, newPassword } = req.body;
-    if (!token || !newPassword) return res.status(400).json({ success: false, error: 'Vui lòng cung cấp đầy đủ thông tin' });
-    
-    if (newPassword.length < 6) {
-      return res.status(400).json({ success: false, error: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+
+    console.log('TOKEN NHAN DUOC:', token);
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Thiếu token hoặc mật khẩu'
+      });
     }
 
-    // Find the reset token
-    const resetRequest = await DatabaseService.findOne<any>('passwordResets', ['token', '==', token]);
+    const resetRequest = await DatabaseService.findOne<any>(
+      'passwordResets',
+      ['token', '==', token]
+    );
 
-    if (!resetRequest || resetRequest.expiresAt.toDate() < new Date()) {
-      return res.status(400).json({ success: false, error: 'Link đã hết hạn hoặc không hợp lệ' });
+    console.log('RESET REQUEST:', resetRequest);
+
+    if (!resetRequest) {
+      return res.status(400).json({
+        success: false,
+        error: 'Không tìm thấy token'
+      });
     }
 
-    // Find the user
-    const user = await DatabaseService.findOne<User>('users', ['email', '==', resetRequest.email]);
+const expiresTime = Number(resetRequest.expiresAt);
+const nowTime = Date.now();
+
+console.log('EXPIRES:', expiresTime);
+console.log('NOW:', nowTime);
+
+if (nowTime > expiresTime) {
+  return res.status(400).json({
+    success: false,
+    error: 'Link đã hết hạn'
+  });
+}
+
+    const user = await DatabaseService.findOne<User>(
+      'users',
+      ['email', '==', resetRequest.email]
+    );
 
     if (!user) {
-      return res.status(400).json({ success: false, error: 'Không tìm thấy người dùng' });
+      return res.status(400).json({
+        success: false,
+        error: 'Không tìm thấy người dùng'
+      });
     }
 
-    // Update password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await DatabaseService.update('users', user.id, { password: hashedPassword });
 
-    // Delete the reset token
+    await DatabaseService.update('users', user.id, {
+      password: hashedPassword
+    });
+
     await DatabaseService.delete('passwordResets', resetRequest.id);
 
-    sendSuccess(res, { message: 'Đặt lại mật khẩu thành công' });
-  } catch (err) { next(err); }
+    sendSuccess(res, {
+      message: 'Đặt lại mật khẩu thành công'
+    });
+
+  } catch (err) {
+    next(err);
+  }
 });
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

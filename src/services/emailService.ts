@@ -1,16 +1,29 @@
 import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
 
 export class EmailService {
   private static getTransporter(config?: any) {
-    const host = config?.smtpHost || process.env.SMTP_HOST;
-    const port = parseInt(config?.smtpPort || process.env.SMTP_PORT || '587');
-    const user = config?.smtpUser || process.env.SMTP_USER;
-    const pass = config?.smtpPass || process.env.SMTP_PASS;
+    // Reload dotenv to pick up any manual .env changes
+    dotenv.config({ override: true });
+const host = process.env.SMTP_HOST || config?.smtpHost;
 
+const port = parseInt(
+  process.env.SMTP_PORT || config?.smtpPort || '587'
+);
+
+const user =
+  process.env.SMTP_USER || config?.smtpUser;
+
+const pass =
+  process.env.SMTP_PASS ||
+  config?.smtpPass ||
+  config?.smtpPassword ||
+  process.env.SMTP_PASSWORD;
+    
     return nodemailer.createTransport({
       host,
       port,
-      secure: port === 465,
+      secure: port === 465, // true for 465, false for other ports
       auth: {
         user,
         pass,
@@ -22,10 +35,15 @@ export class EmailService {
   }
 
   static async sendResetPasswordEmail(email: string, token: string, config?: any, baseUrl?: string) {
+    // Reload dotenv
+    dotenv.config({ override: true });
+
     const fallbackUrl = process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000';
     const appUrl = baseUrl || process.env.APP_URL || process.env.CLIENT_URL || fallbackUrl;
     const resetUrl = `${appUrl}/reset-password?token=${token}`;
     const from = config?.smtpFrom || process.env.SMTP_FROM || '"Quản lý nhà trọ" <noreply@boardingpro.com>';
+
+    console.log(`SMTP_FROM: ${from}`);
 
     const mailOptions = {
       from,
@@ -53,7 +71,7 @@ export class EmailService {
         console.log(`Email: ${email}`);
         console.log(`Link: ${resetUrl}`);
         console.log('-----------------------------------');
-        return;
+        throw new Error('SMTP_HOST is not configured in .env or database.');
       }
       
       const transporter = this.getTransporter(config);
@@ -62,15 +80,21 @@ export class EmailService {
       try {
         await transporter.verify();
         console.log('[EMAIL SERVICE] SMTP connection verified successfully');
-      } catch (verifyErr) {
-        console.error('[EMAIL SERVICE] SMTP verify error:', verifyErr);
-        // Continue anyway as verify can be strict
+      } catch (verifyErr: any) {
+        console.error('[EMAIL SERVICE] SMTP verify error full trace:');
+        console.error(verifyErr);
+        if (verifyErr?.message?.includes('Invalid login') || verifyErr?.message?.includes('Username and Password not accepted')) {
+          console.error('[EMAIL SERVICE] Gmail may have rejected the login. Please check if you are using a correct Gmail App Password (Mật khẩu ứng dụng 16 ký tự).');
+          throw new Error('Đăng nhập SMTP thất bại. Nếu dùng Gmail, hãy sử dụng "Mật khẩu ứng dụng" (App Password) thay vì mật khẩu email thường.');
+        }
+        throw new Error(`Lỗi kết nối SMTP (verify error): ${verifyErr.message}`);
       }
 
       await transporter.sendMail(mailOptions);
-      console.log(`[EMAIL SERVICE] Reset password email sent to ${email}`);
+      console.log(`[EMAIL SERVICE] Reset password email sent successfully to ${email}`);
     } catch (error) {
-      console.error('[EMAIL SERVICE] Error sending reset password email:', error);
+      console.error('[EMAIL SERVICE] Error sending reset password email full trace:');
+      console.error(error);
       console.log('--- FALLBACK RESET PASSWORD LINK (DEBUG) ---');
       console.log(`Email: ${email}`);
       console.log(`Link: ${resetUrl}`);

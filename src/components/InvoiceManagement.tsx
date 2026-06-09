@@ -123,34 +123,72 @@ export function InvoiceManagement({
   }, [initialInvoiceId, invoices, onClearInitialInvoiceId]);
 
   // Polling for payment status when QR modal is open
-  React.useEffect(() => {
-    let interval: any;
-    if (isQRModalOpen && selectedInvoice && selectedInvoice.status !== 'PAID') {
-      const room = rooms.find(r => r.id === selectedInvoice.roomId);
-      if (room) {
-        const roomNumber = room.name.match(/\d+/)?.[0] || room.name;
-        const monthStr = selectedInvoice.month.split('-')[1] || '';
-        const code = `HD${roomNumber}T${monthStr}`;
-        
-        interval = setInterval(() => {
-          console.log(`[Polling] Checking payment for ${code}...`);
-          if (onCheckPayment) onCheckPayment(code);
-          
-          // Check local invoices state (which is real-time)
-          const inv = invoices.find(i => i.code === code);
-          if (inv && inv.status === 'PAID') {
-            setToast({ message: 'Thanh toán thành công!', type: 'success', isVisible: true });
-            setIsQRModalOpen(false);
-            setSelectedInvoice(null);
-            clearInterval(interval);
-          }
-        }, 3000);
+React.useEffect(() => {
+  let interval: any;
+
+  if (
+    isQRModalOpen &&
+    selectedInvoice &&
+    selectedInvoice.status !== 'PAID'
+  ) {
+    interval = setInterval(async () => {
+      try {
+        console.log(
+          `[Polling] Checking payment for ${selectedInvoice.code}...`
+        );
+
+        const result: any = await apiFetch(
+          `/api/check-payment/${selectedInvoice.code}`
+        );
+
+        // nếu backend trả về đã thanh toán
+        if (result?.paid || result?.status === 'PAID') {
+
+          // cập nhật danh sách hóa đơn
+          setInvoices(prev =>
+            prev.map(inv =>
+              inv.code === selectedInvoice.code
+                ? { ...inv, status: 'PAID' }
+                : inv
+            )
+          );
+
+          // cập nhật invoice đang chọn
+          setSelectedInvoice(prev =>
+            prev
+              ? { ...prev, status: 'PAID' }
+              : null
+          );
+
+          // hiện toast
+          setToast({
+            message: 'Thanh toán thành công!',
+            type: 'success',
+            isVisible: true
+          });
+
+          // đóng QR modal
+          setIsQRModalOpen(false);
+
+          // đóng luôn modal chi tiết
+          setSelectedInvoice(null);
+
+          // refresh dữ liệu
+          onRefresh();
+
+          clearInterval(interval);
+        }
+
+      } catch (err) {
+        console.error('Polling error:', err);
       }
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isQRModalOpen, selectedInvoice, rooms, onRefresh]);
+    }, 3000);
+  }
+
+  return () => {
+    if (interval) clearInterval(interval);
+  };
+}, [isQRModalOpen, selectedInvoice]);
 
   const handleMarkAsPaid = async (id: string) => {
     try {
